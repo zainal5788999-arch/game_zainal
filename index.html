@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neon Overdrive 3D</title>
+    <!-- Tailwind CSS untuk UI Modern -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <!-- Three.js untuk Grafis 3D -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
+        
+        body {
+            font-family: 'Orbitron', sans-serif;
+            user-select: none;
+            overflow: hidden;
+            background-color: #02020a;
+        }
+
+        /* Efek Glassmorphic & Neon Glow */
+        .neon-border {
+            box-shadow: 0 0 15px rgba(0, 229, 255, 0.5), inset 0 0 15px rgba(0, 229, 255, 0.3);
+            border: 1px solid rgba(0, 229, 255, 0.6);
+        }
+        
+        .neon-text-blue {
+            text-shadow: 0 0 10px rgba(0, 229, 255, 0.8), 0 0 20px rgba(0, 229, 255, 0.5);
+        }
+
+        .neon-text-pink {
+            text-shadow: 0 0 10px rgba(255, 0, 127, 0.8), 0 0 20px rgba(255, 0, 127, 0.5);
+        }
+
+        /* Animasi Custom */
+        @keyframes pulse-fast {
+            0%, 100% { transform: scale(1); opacity: 0.9; }
+            50% { transform: scale(1.05); opacity: 1; filter: brightness(1.3); }
+        }
+        .animate-pulse-fast {
+            animation: pulse-fast 0.5s infinite;
+        }
+
+        /* Sembunyikan scrollbar canvas */
+        canvas { display: block; }
+    </style>
+</head>
+<body class="w-screen h-screen m-0 p-0 relative flex items-center justify-center text-white">
+
+    <!-- GAME CANVAS -->
+    <div id="game-container" class="absolute inset-0 w-full h-full z-0"></div>
+
+    <!-- HUD / UI GAME (SELAMA BERMAIN) -->
+    <div id="hud" class="absolute top-6 left-6 right-6 flex justify-between items-start z-10 pointer-events-none hidden">
+        <!-- Kiri: Skor & Level -->
+        <div class="bg-black/40 backdrop-blur-md p-4 rounded-xl neon-border flex flex-col gap-1">
+            <div class="text-xs text-cyan-400 font-bold uppercase tracking-widest">Score</div>
+            <div id="score-val" class="text-3xl font-black text-white neon-text-blue">0000</div>
+            <div class="text-xs text-pink-500 font-bold uppercase tracking-widest mt-2">Level</div>
+            <div id="level-val" class="text-2xl font-black text-white neon-text-pink">1</div>
+        </div>
+        <!-- Kanan: Indikator Kecepatan -->
+        <div class="bg-black/40 backdrop-blur-md p-4 rounded-xl neon-border text-right">
+            <div class="text-xs text-cyan-400 font-bold uppercase tracking-widest">Speed</div>
+            <div class="text-3xl font-black italic text-cyan-300"><span id="speed-val">0</span> <span class="text-sm font-normal">KM/H</span></div>
+            <div class="w-32 bg-gray-800 h-1.5 rounded-full mt-2 overflow-hidden">
+                <div id="speed-bar" class="bg-gradient-to-r from-cyan-500 to-fuchsia-500 h-full w-0 transition-all duration-100"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MAIN MENU SCREEN -->
+    <div id="menu-screen" class="absolute z-20 flex flex-col items-center justify-center p-8 text-center bg-slate-950/70 backdrop-blur-xl rounded-2xl neon-border max-w-md mx-4 transition-all duration-500">
+        <h1 class="text-4xl md:text-5xl font-black tracking-wider uppercase bg-gradient-to-r from-cyan-400 via-blue-500 to-fuchsia-500 bg-clip-text text-transparent filter drop-shadow-[0_5px_5px_rgba(0,0,0,0.5)] mb-2">
+            NEON OVERDRIVE
+        </h1>
+        <p class="text-xs tracking-widest text-cyan-400 uppercase mb-8">Infinite 3D Cyber Racer</p>
+        
+        <button id="start-btn" class="w-full py-4 px-8 bg-gradient-to-r from-cyan-500 to-blue-600 rounded-xl font-bold text-lg tracking-widest hover:from-cyan-400 hover:to-blue-500 transform hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer shadow-[0_0_20px_rgba(0,229,255,0.4)]">
+            START DRIVE
+        </button>
+        <div class="text-[10px] text-slate-400 mt-6 tracking-wide leading-relaxed">
+            Gunakan <span class="text-cyan-400 font-bold">A / D</span> atau <span class="text-cyan-400 font-bold">Panah Kiri / Kanan</span> untuk berbelok.<br>Hindari balok energi merah! Target: Berjalan hingga 1000m tiap level.
+        </div>
+    </div>
+
+    <!-- LEVEL UP TRANSITION SCREEN -->
+    <div id="levelup-screen" class="absolute z-20 hidden flex-col items-center justify-center inset-0 bg-black/80 backdrop-blur-md transition-all duration-300">
+        <div class="text-center transform scale-90 animate-pulse-fast">
+            <h2 class="text-6xl font-black tracking-widest text-fuchsia-500 neon-text-pink mb-2">LEVEL UP!</h2>
+            <p id="levelup-msg" class="text-lg text-cyan-300 tracking-wider">Kesulitan meningkat. Bersiaplah...</p>
+        </div>
+    </div>
+
+    <!-- GAME OVER SCREEN -->
+    <div id="gameover-screen" class="absolute z-20 hidden flex-col items-center justify-center p-8 text-center bg-black/90 backdrop-blur-2xl rounded-2xl border border-red-500/50 shadow-[0_0_50px_rgba(239,68,68,0.3)] max-w-sm mx-4 transition-all duration-500">
+        <div class="w-16 h-16 rounded-full bg-red-500/20 border border-red-500 flex items-center justify-center text-red-500 text-3xl font-black mb-4 animate-bounce">!</div>
+        <h2 class="text-3xl font-black tracking-widest text-red-500 uppercase mb-1">CRASHED</h2>
+        <p class="text-xs text-slate-400 tracking-widest uppercase mb-6">Sirkuit hancur terbentur</p>
+        
+        <div class="bg-slate-900/80 rounded-xl p-4 w-full flex justify-around mb-6 border border-slate-800">
+            <div>
+                <div class="text-[10px] text-slate-400 uppercase tracking-wider">Final Level</div>
+                <div id="go-level" class="text-2xl font-bold text-fuchsia-400">1</div>
+            </div>
+            <div class="w-px bg-slate-800"></div>
+            <div>
+                <div class="text-[10px] text-slate-400 uppercase tracking-wider">Final Score</div>
+                <div id="go-score" class="text-2xl font-bold text-cyan-400">0</div>
+            </div>
+        </div>
+
+        <button id="restart-btn" class="w-full py-3 px-6 bg-gradient-to-r from-red-500 to-pink-600 rounded-xl font-bold tracking-widest hover:from-red-400 hover:to-pink-500 transform hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer shadow-[0_0_20px_rgba(239,68,68,0.4)]">
+            TRY AGAIN
+        </button>
+    </div>
+
+    <!-- JAVASCRIPT GAME LOGIC -->
+    <script>
+        // --- GAME CONFIG & STATE ---
+        const config = {
+            roadWidth: 20,
+            roadLength: 2000,
+            baseSpeed: 0.8,
+            speedIncrement: 0.2, // Tambahan kecepatan tiap naik level
+            levelDistance: 1000  // Jarak yang dibutuhkan untuk naik level
+        };
+
+        let state = {
+            running: false,
+            level: 1,
+            score: 0,
+            distanceTraveled: 0,
+            speed: 0,
+            playerX: 0,
+            targetPlayerX: 0,
+            obstacles: [],
+            speedLines: []
+        };
+
+        // Input handler
+        const keys = { Left: false, Right: false };
+
+        // --- THREE.JS SETUP ---
+        let scene, camera, renderer;
+        let playerCar, road, floorGrid;
+        const container = document.getElementById('game-container');
+
+        function init3D() {
+            // Scene
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x02020a, 0.015);
+
+            // Camera
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 5, 12);
+            camera.lookAt(0, 2, -5);
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            container.appendChild(renderer.domElement);
+
+            // Lights
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.2);
+            scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0x00e5ff, 0.8);
+            dirLight.position.set(0, 10, 5);
+            scene.add(dirLight);
+
+            // Membuat Objek Game
+            createRoad();
+            createPlayerCar();
+            createSpeedLines();
+            createEnvironment();
+        }
+
+        // --- MODEL CREATION (PROCEDURAL NEON DESIGNS) ---
+
+        function createRoad() {
+            // Jalur Utama (Aspal Gelap)
+            const roadGeo = new THREE.PlaneGeometry(config.roadWidth, config.roadLength);
+            const roadMat = new THREE.MeshStandardMaterial({ 
+                color: 0x070714, 
+                roughness: 0.8, 
+                metalness: 0.2 
+            });
+            road = new THREE.Mesh(roadGeo, roadMat);
+            road.rotation.x = -Math.PI / 2;
+            road.position.z = -config.roadLength / 2 + 10;
+            scene.add(road);
+
+            // Garis Pembatas Kiri & Kanan (Lampu Neon)
+            const leftLineGeo = new THREE.BoxGeometry(0.2, 0.1, config.roadLength);
+            const leftLineMat = new THREE.MeshBasicMaterial({ color: 0x00e5ff });
+            const leftLine = new THREE.Mesh(leftLineGeo, leftLineMat);
+            leftLine.position.set(-config.roadWidth/2, 0.05, -config.roadLength/2 + 10);
+            scene.add(leftLine);
+
+            const rightLineMat = new THREE.MeshBasicMaterial({ color: 0xff007f });
+            const rightLine = new THREE.Mesh(leftLineGeo, rightLineMat);
+            rightLine.position.set(config.roadWidth/2, 0.05, -config.roadLength/2 + 10);
+            scene.add(rightLine);
+        }
+
+        function createPlayerCar() {
+            playerCar = new THREE.Group();
+
+            // Sasis Utama Mobil (Gaya Cyberpunk/Futuristik)
+            const bodyGeo = new THREE.BoxGeometry(1.8, 0.5, 3.5);
+            const bodyMat = new THREE.MeshStandardMaterial({ 
+                color: 0x0d1b2a, 
+                roughness: 0.2, 
+                metalness: 0.8 
+            });
+            const carBody = new THREE.Mesh(bodyGeo, bodyMat);
+            carBody.position.y = 0.4;
+            playerCar.add(carBody);
+
+            // Kaca Kabin (Neon Cyan)
+            const cabinGeo = new THREE.BoxGeometry(1.4, 0.4, 1.5);
+            const cabinMat = new THREE.MeshStandardMaterial({ color: 0x00e5ff, emissive: 0x00e5ff, emissiveIntensity: 0.5 });
+            const cabin = new THREE.Mesh(cabinGeo, cabinMat);
+            cabin.position.set(0, 0.7, -0.2);
+            playerCar.add(cabin);
+
+            // Lampu Belakang (Neon Pink)
+            const tailLightGeo = new THREE.BoxGeometry(1.4, 0.1, 0.1);
+            const tailLightMat = new THREE.MeshBasicMaterial({ color: 0xff007f });
+            const tailLight = new THREE.Mesh(tailLightGeo, tailLightMat);
+            tailLight.position.set(0, 0.4, 1.76);
+            playerCar.add(tailLight);
+
+            // Lampu Depan (Neon Cyan)
+            const headLightGeo = new THREE.BoxGeometry(1.4, 0.1, 0.1);
+            const headLightMat = new THREE.MeshBasicMaterial({ color: 0x00e5ff });
+            const headLight = new THREE.Mesh(headLightGeo, headLightMat);
+            headLight.position.set(0, 0.3, -1.76);
+            playerCar.add(headLight);
+
+            // Roda (Silinder Hitam)
+            const wheelGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.4, 12);
+            const wheelMat = new THREE.MeshStandardMaterial({ color: 0x050505, roughness: 0.9 });
+            
+            const positions = [
+                [-1, 0.35, -1.1], [1, 0.35, -1.1],
+                [-1, 0.35, 1.1], [1, 0.35, 1.1]
+            ];
+
+            positions.forEach(pos => {
+                const wheel = new THREE.Mesh(wheelGeo, wheelMat);
+                wheel.rotation.z = Math.PI / 2;
+                wheel.position.set(pos[0], pos[1], pos[2]);
+                playerCar.add(wheel);
+            });
+
+            playerCar.position.set(0, 0, 0);
+            scene.add(playerCar);
+        }
+
+        function createSpeedLines() {
+            // Efek garis angin saat melaju cepat
+            const count = 40;
+            const lineGeo = new THREE.BoxGeometry(0.05, 0.05, 4);
+            const lineMat = new THREE.MeshBasicMaterial({ color: 0x00e5ff, transparent: true, opacity: 0.6 });
+
+            for(let i=0; i<count; i++) {
+                const line = new THREE.Mesh(lineGeo, lineMat);
+                resetSpeedLine(line);
+                // Distribusi random awal sepanjang sumbu Z
+                line.position.z = -Math.random() * 150;
+                scene.add(line);
+                state.speedLines.push(line);
+            }
+        }
+
+        function resetSpeedLine(line) {
+            line.position.x = (Math.random() - 0.5) * config.roadWidth * 2;
+            line.position.y = Math.random() * 8 + 0.5;
+            line.position.z = -150 - Math.random() * 50;
+        }
+
+        function createEnvironment() {
+            // Grid lantai luar jalur balap
+            const gridHelper = new THREE.GridHelper(500, 100, 0xff007f, 0x0044ff);
+            gridHelper.position.y = -0.1;
+            scene.add(gridHelper);
+            floorGrid = gridHelper;
+        }
+
+        // --- OBSTACLE LOGIC (RINTANGAN LEVELING) ---
+
+        function spawnObstacle() {
+            // Tingkat kesulitan mempengaruhi seberapa padat rintangan yang muncul
+            const lanes = [-6, 0, 6];
+            const randomLane = lanes[Math.floor(Math.random() * lanes.length)];
+            
+            // Variasi bentuk rintangan (Kubus Gerbang Energi Neon)
+            const obsGeo = new THREE.BoxGeometry(4, 2, 2);
+            const obsMat = new THREE.MeshStandardMaterial({ 
+                color: 0x110011,
+                emissive: 0xff0033,
+                emissiveIntensity: 1.5,
+                roughness: 0.2
+            });
+            
+            const obstacle = new THREE.Mesh(obsGeo, obsMat);
+            obstacle.position.set(randomLane, 1, -180);
+            
+            // Tambah variasi border cahaya neon luar rintangan agar dramatis
+            const edgeGeo = new THREE.EdgesGeometry(obsGeo);
+            const edgeMat = new THREE.LineBasicMaterial({ color: 0xff0055, linewidth: 2 });
+            const wireframe = new THREE.LineSegments(edgeGeo, edgeMat);
+            obstacle.add(wireframe);
+
+            scene.add(obstacle);
+            state.obstacles.push(obstacle);
+        }
+
+        // --- GAME LOOP & ANIMATION ---
+
+        let lastSpawnTime = 0;
+
+        function update(time) {
+            if (!state.running) return;
+
+            requestAnimationFrame(update);
+
+            // 1. Hitung Kecepatan & Jarak
+            const targetMaxSpeed = config.baseSpeed + (state.level * config.speedIncrement);
+            // Efek akselerasi halus saat mulai atau naik level
+            state.speed += (targetMaxSpeed - state.speed) * 0.02;
+            state.distanceTraveled += state.speed;
+            state.score += Math.floor(state.speed * 2);
+
+            // Update UI HUD secara realtime
+            document.getElementById('score-val').innerText = String(state.score).padStart(4, '0');
+            document.getElementById('speed-val').innerText = Math.floor(state.speed * 180);
+            document.getElementById('speed-bar').style.width = `${Math.min((state.speed / 2.5) * 100, 100)}%`;
+
+            // 2. Kontrol Pergerakan Mobil Player (Interpolasi Halus / Lerp)
+            if (keys.Left) state.targetPlayerX = Math.max(state.targetPlayerX - 0.4, -config.roadWidth / 2 + 1.5);
+            if (keys.Right) state.targetPlayerX = Math.min(state.targetPlayerX + 0.4, config.roadWidth / 2 - 1.5);
+            
+            playerCar.position.x += (state.targetPlayerX - playerCar.position.x) * 0.15;
+            // Animasi miring sedikit saat belok murni estetika modern
+            playerCar.rotation.z = -(playerCar.position.x - state.targetPlayerX) * 0.05;
+            playerCar.rotation.y = (playerCar.position.x - state.targetPlayerX) * 0.03;
+
+            // 3. Gerakkan Background & Jalanan (Efek Bergerak Kontinu)
+            floorGrid.position.z = (state.distanceTraveled * 1.2) % 10;
+
+            // 4. Update Efek Kecepatan (Speed Lines)
+            state.speedLines.forEach(line => {
+                line.position.z += state.speed * 2.5; // Garis bergerak lebih cepat menciptakan efek warp
+                if (line.position.z > 15) {
+                    resetSpeedLine(line);
+                }
+            });
+
+            // 5. Spawn & Handle Rintangan Berdasarkan Jeda Waktu (Semakin tinggi level, semakin rapat)
+            const spawnInterval = Math.max(2000 - (state.level * 200), 700);
+            if (time - lastSpawnTime > spawnInterval) {
+                spawnObstacle();
+                lastSpawnTime = time;
+            }
+
+            // Gerakkan & cek tabrakan rintangan
+            for (let i = state.obstacles.length - 1; i >= 0; i--) {
+                const obs = state.obstacles[i];
+                obs.position.z += state.speed;
+
+                // Hitbox Collision Check (Sederhana namun presisi tinggi)
+                const pBox = new THREE.Box3().setFromObject(playerCar);
+                const oBox = new THREE.Box3().setFromObject(obs);
+
+                if (pBox.intersectsBox(oBox)) {
+                    triggerGameOver();
+                    return;
+                }
+
+                // Hapus jika sudah melewati kamera belakang
+                if (obs.position.z > 15) {
+                    scene.remove(obs);
+                    state.obstacles.splice(i, 1);
+                }
+            }
+
+            // 6. Sistem Leveling Tanpa Batas (Infinite Levels)
+            if (state.distanceTraveled >= state.level * config.levelDistance) {
+                triggerLevelUp();
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // --- ANIMASI STATE / TRANSISI ---
+
+        function triggerLevelUp() {
+            state.level++;
+            state.running = false;
+            
+            document.getElementById('level-val').innerText = state.level;
+            const screen = document.getElementById('levelup-screen');
+            document.getElementById('levelup-msg').innerText = `Memasuki Dimensi Kecepatan Level ${state.level}!`;
+            
+            screen.classList.remove('hidden');
+            screen.classList.add('flex');
+
+            // Hapus rintangan lama agar adil saat transisi level baru
+            state.obstacles.forEach(obs => scene.remove(obs));
+            state.obstacles = [];
+
+            setTimeout(() => {
+                screen.classList.add('hidden');
+                screen.classList.remove('flex');
+                state.running = true;
+                requestAnimationFrame(update);
+            }, 1800);
+        }
+
+        function triggerGameOver() {
+            state.running = false;
+            
+            // Isi data scoreboard akhir
+            document.getElementById('go-level').innerText = state.level;
+            document.getElementById('go-score').innerText = state.score;
+            
+            // Tampilkan Screen Game Over dengan efek blur intens
+            document.getElementById('hud').classList.add('hidden');
+            const goScreen = document.getElementById('gameover-screen');
+            goScreen.classList.remove('hidden');
+            goScreen.classList.add('flex');
+
+            // Efek kamera getar / hancur estetik
+            let shakeCount = 0;
+            const shakeInterval = setInterval(() => {
+                camera.position.x = (Math.random() - 0.5) * 1.5;
+                camera.position.y = 5 + (Math.random() - 0.5) * 1.5;
+                shakeCount++;
+                if(shakeCount > 10) {
+                    clearInterval(shakeInterval);
+                    camera.position.set(0, 5, 12);
+                }
+            }, 50);
+        }
+
+        function resetGame() {
+            state.level = 1;
+            state.score = 0;
+            state.distanceTraveled = 0;
+            state.speed = config.baseSpeed;
+            state.playerX = 0;
+            state.targetPlayerX = 0;
+            
+            document.getElementById('level-val').innerText = "1";
+            document.getElementById('score-val').innerText = "0000";
+
+            state.obstacles.forEach(obs => scene.remove(obs));
+            state.obstacles = [];
+            playerCar.position.set(0, 0, 0);
+            playerCar.rotation.set(0, 0, 0);
+            camera.position.set(0, 5, 12);
+        }
+
+        // --- EVENT LISTENERS & CONTROLS ---
+
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowLeft' || e.key.toLowerCase() === 'a') keys.Left = true;
+            if (e.key === 'ArrowRight' || e.key.toLowerCase() === 'd') keys.Right = true;
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if (e.key === 'ArrowLeft' || e.key.toLowerCase() === 'a') keys.Left = false;
+            if (e.key === 'ArrowRight' || e.key.toLowerCase() === 'd') keys.Right = false;
+        });
+
+        document.getElementById('start-btn').addEventListener('click', () => {
+            document.getElementById('menu-screen').classList.add('hidden');
+            document.getElementById('hud').classList.remove('hidden');
+            state.running = true;
+            lastSpawnTime = performance.now();
+            requestAnimationFrame(update);
+        });
+
+        document.getElementById('restart-btn').addEventListener('click', () => {
+            document.getElementById('gameover-screen').classList.add('hidden');
+            document.getElementById('hud').classList.remove('hidden');
+            resetGame();
+            state.running = true;
+            lastSpawnTime = performance.now();
+            requestAnimationFrame(update);
+        });
+
+        // Responsif saat window diubah ukurannya
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Jalankan inisialisasi 3D saat dokumen siap
+        init3D();
+    </script>
+</body>
+</html>
